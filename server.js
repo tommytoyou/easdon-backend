@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -13,12 +12,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Routes
+const authRoutes = require('./routes/auth');
+app.use('/api/auth', authRoutes);
+
 // Base route
 app.get('/', (req, res) => {
   res.send('✅ Easdon Backend is Running');
 });
 
-// Connect to MongoDB
+// MongoDB connection
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
