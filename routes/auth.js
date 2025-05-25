@@ -1,71 +1,72 @@
 const express = require('express');
-const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const authMiddleware = require('../middleware/authMiddleware');
 
-// @route   POST /api/auth/register
-// @desc    Register new user
-// @access  Public
-router.post('/register', async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
+const router = express.Router();
 
-    // Check if user exists
-    const userExists = await User.findOne({ email });
-    if (userExists) {
+// Register a new user
+router.post('/register', async (req, res) => {
+  const { name, email, password, role } = req.body;
+
+  try {
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    // Create new user
-    const newUser = new User({ name, email, password });
-    await newUser.save();
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-    res.status(201).json({ message: 'User registered successfully' });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
-  }
-});
-
-// @route   POST /api/auth/login
-// @desc    Authenticate user & get token
-// @access  Public
-router.post('/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    // Find user
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
-
-    // Check password
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
-    }
-
-    // Generate JWT
-    const payload = { userId: user._id };
-    const token = jwt.sign(payload, process.env.JWT_SECRET, {
-      expiresIn: '1h',
+    const newUser = new User({
+      name,
+      email,
+      password: hashedPassword,
+      role
     });
 
-    res.json({ message: 'Login successful', token });
+    await newUser.save();
+    res.status(201).json({ message: 'User registered successfully' });
+
   } catch (err) {
-    res.status(500).json({ message: 'Server error', error: err.message });
+    res.status(500).json({ message: 'Error registering user', error: err.message });
   }
 });
 
-// @route   GET /api/auth/dashboard
-// @desc    Protected route
-// @access  Private
-router.get('/dashboard', authMiddleware, (req, res) => {
-  res.json({
-    message: `Welcome to your dashboard, user ${req.user.id}`
-  });
+// Login user and return JWT
+router.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(400).json({ message: 'Invalid credentials' });
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(400).json({ message: 'Invalid credentials' });
+
+    const payload = {
+      userId: user._id,
+      email: user.email,
+      role: user.role
+    };
+
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' });
+    res.json({ token });
+
+  } catch (err) {
+    res.status(500).json({ message: 'Error logging in', error: err.message });
+  }
+});
+
+// Protected route to return user info
+router.get('/me', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('-password');
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: 'Error fetching user data', error: err.message });
+  }
 });
 
 module.exports = router;
